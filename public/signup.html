@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>회원가입 - 게시판</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <nav id="nav"></nav>
+  <main>
+    <h1>회원가입</h1>
+    <div id="message"></div>
+    <form id="form">
+      <label for="username">아이디</label>
+      <input type="text" id="username" name="username" autocomplete="username" placeholder="영문/숫자 4~20자">
+      <label for="password">비밀번호</label>
+      <input type="password" id="password" name="password" autocomplete="new-password" placeholder="8자 이상">
+      <label for="nickname">닉네임</label>
+      <input type="text" id="nickname" name="nickname" placeholder="2~20자">
+      <div class="actions"><button type="submit">가입하기</button></div>
+    </form>
+  </main>
+  <script src="/app.js"></script>
+  <script>
+    renderNav();
+    document.getElementById('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const { ok, data } = await api('POST', '/api/signup', {
+        username: document.getElementById('username').value,
+        password: document.getElementById('password').value,
+        nickname: document.getElementById('nickname').value,
+      });
+      if (!ok) return showMessage(data ? data.error : '가입에 실패했습니다.', true);
+      showMessage('가입이 완료되었습니다. 로그인 페이지로 이동합니다.', false);
+      setTimeout(() => { location.href = '/login.html'; }, 800);
+    });
+  </script>
+</body>
+</html>

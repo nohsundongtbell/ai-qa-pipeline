@@ -1,0 +1,16 @@
+{
+  "name": "ai-qa-pipeline-board",
+  "version": "1.0.0",
+  "description": "QA 실습용 간단한 게시판 웹앱",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^13.0.3",
+    "express": "^5.2.1",
+    "express-session": "^1.19.0"
+  }
+}

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>게시글 - 게시판</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <nav id="nav"></nav>
+  <main>
+    <div id="message"></div>
+    <article id="post" hidden>
+      <h1 id="post-title"></h1>
+      <div class="meta">
+        작성자: <span id="post-author"></span> ·
+        작성일: <span id="post-date"></span>
+        <span id="post-updated"></span>
+      </div>
+      <div id="post-content" class="content"></div>
+      <div class="actions">
+        <a class="btn secondary" href="/">목록</a>
+        <a id="edit-btn" class="btn" href="#" hidden>수정</a>
+        <button id="delete-btn" type="button" class="danger" hidden>삭제</button>
+      </div>
+    </article>
+  </main>
+  <script src="/app.js"></script>
+  <script>
+    (async () => {
+      const user = await renderNav();
+      const id = getParam('id');
+      const { ok, status, data } = await api('GET', `/api/posts/${encodeURIComponent(id || '')}`);
+      if (!ok) {
+        return showMessage(status === 404 ? '게시글을 찾을 수 없습니다.' : '불러오지 못했습니다.', true);
+      }
+      document.title = `${data.title} - 게시판`;
+      document.getElementById('post-title').textContent = data.title;
+      document.getElementById('post-author').textContent = data.author;
+      document.getElementById('post-date').textContent = data.created_at;
+      if (data.updated_at !== data.created_at) {
+        document.getElementById('post-updated').textContent = `(수정: ${data.updated_at})`;
+      }
+      document.getElementById('post-content').textContent = data.content;
+      document.getElementById('post').hidden = false;
+
+      if (user && user.id === data.user_id) {
+        const edit = document.getElementById('edit-btn');
+        edit.href = `/write.html?id=${data.id}`;
+        edit.hidden = false;
+        const del = document.getElementById('delete-btn');
+        del.hidden = false;
+        del.addEventListener('click', async () => {
+          if (!confirm('정말 삭제하시겠습니까?')) return;
+          const r = await api('DELETE', `/api/posts/${data.id}`);
+          if (!r.ok) return showMessage(r.data ? r.data.error : '삭제에 실패했습니다.', true);
+          location.href = '/';
+        });
+      }
+    })();
+  </script>
+</body>
+</html>
