@@ -71,6 +71,40 @@ test('Gemini: 429는 재시도하고, 이후 성공하면 결과를 돌려준다
   }
 });
 
+test('Gemini: 일일 한도(PerDay) 초과 429는 재시도하지 않고 다음 모델로 넘어간다 (재시도가 한도를 더 소모하지 않도록)', async () => {
+  const daily = JSON.stringify({ error: { code: 429, message: 'You exceeded your current quota', details: [{ '@type': 'type.googleapis.com/google.rpc.QuotaFailure', violations: [{ quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier' }] }] } });
+  const { server, calls, url } = await mockGemini((c, res) => {
+    if (c.url.includes('m1:')) {
+      res.writeHead(429);
+      return res.end(daily);
+    }
+    ok(res, '{"from":"m2"}');
+  });
+  try {
+    const r = await call(url, { models: ['m1', 'm2'] });
+    assert.equal(r.model, 'm2');
+    assert.equal(calls.length, 2, 'm1은 1번만 호출하고 곧바로 m2로 넘어가야 함');
+  } finally {
+    server.close();
+  }
+});
+
+test('Gemini: 분당 한도 429는 응답이 알려 준 retryDelay만큼만 기다리고, 재시도는 최대 2번', async () => {
+  const perMin = JSON.stringify({ error: { code: 429, message: 'quota', details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '34s' }] } });
+  const waits = [];
+  const { server, calls, url } = await mockGemini((c, res) => {
+    res.writeHead(429);
+    res.end(perMin);
+  });
+  try {
+    await assert.rejects(call(url, { models: ['m1'], sleep: (ms) => (waits.push(ms), Promise.resolve()) }), /429 무료 한도 초과/);
+    assert.equal(calls.length, 3, '최초 1회 + 재시도 2회');
+    assert.deepEqual(waits, [35000, 35000], 'retryDelay 34초 + 1초 여유');
+  } finally {
+    server.close();
+  }
+});
+
 test('Gemini: 503(과부하)이 여러 번 이어져도 길게 재시도해서 회복되면 성공한다 (실제 발생한 실패)', async () => {
   const waits = [];
   const { server, calls, url } = await mockGemini((c, res, n) => (n <= 5 ? fail(res, 503, '{"error":{"status":"UNAVAILABLE","message":"high demand"}}') : ok(res, '{"ok":1}')));

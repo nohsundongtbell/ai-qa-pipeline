@@ -36,7 +36,7 @@ async function renderNav() {
 
   const home = document.createElement('a');
   home.href = '/';
-  home.textContent = '홈';
+  home.textContent = '게시판';
   home.className = 'brand';
   nav.appendChild(home);
 

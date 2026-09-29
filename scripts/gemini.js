@@ -9,9 +9,27 @@
  * 주의: 무료 등급은 호출 횟수 제한이 있고, 보낸 내용이 서비스 개선에 쓰일 수 있다. 민감한 코드나 데이터는 보내지 않는다.
  */
 // 모델은 자주 폐기된다 (2.5-flash, 2.0-flash는 이미 종료됨). 그래서 404 응답이 안내하는 새 모델을 자동으로 이어서 시도한다.
-const DEFAULT_MODELS = ['gemini-3.8-flash', 'gemini-flash-latest'];
+// 무료 등급의 한도는 모델마다 따로 잡히는 경우가 많아, 한 모델이 한도에 걸리면 다른 모델로 넘어간다 (없는 이름은 404로 건너뜀)
+const DEFAULT_MODELS = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-flash-lite-latest'];
 const DEFAULT_BASE = 'https://generativelanguage.googleapis.com';
 const MAX_TOKENS_CAP = 32768;
+const MAX_RETRIES_429 = 2;
+
+/** 429 응답에서 재시도 대기 시간(retryDelay)과 일일 한도 여부를 읽는다 */
+function quotaInfo(bodyText) {
+  let delayMs = null;
+  let daily = /PerDay/i.test(bodyText);
+  try {
+    const details = (JSON.parse(bodyText).error || {}).details || [];
+    for (const d of details) {
+      if (d.retryDelay) delayMs = parseFloat(d.retryDelay) * 1000; // "34s" 또는 "34.5s"
+      for (const v of d.violations || []) if (/PerDay/i.test(v.quotaId || '')) daily = true;
+    }
+  } catch {
+    /* JSON이 아니면 본문 문자열만 본다 */
+  }
+  return { delayMs: Number.isFinite(delayMs) ? delayMs : null, daily };
+}
 
 const sleepReal = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -75,7 +93,23 @@ async function generateJson({
 
       const bodyText = await res.text();
 
-      if (res.status === 429 || res.status >= 500) {
+      // 429(한도 초과): 재시도 자체가 한도를 더 소모하므로 신중하게 다룬다.
+      //  - 일일 한도(PerDay)면 재시도해도 소용없으니 이 모델은 바로 포기하고 다음 모델로 (한도는 모델마다 따로일 수 있다)
+      //  - 응답이 알려 준 재시도 대기 시간(retryDelay)이 있으면 그만큼만 기다리고, 최대 2번만 다시 시도한다
+      if (res.status === 429) {
+        const { delayMs, daily } = quotaInfo(bodyText);
+        lastError = new Error(`Gemini 429 무료 한도 초과(${model})${daily ? ' - 일일 한도' : ''}: ${bodyText.replace(/\s+/g, ' ').slice(0, 220)}`);
+        if (daily) {
+          log(`${model}: 일일 한도를 초과해 재시도하지 않고 다음 모델로 넘어갑니다.`);
+          break;
+        }
+        if (attempt >= Math.min(maxRetries, MAX_RETRIES_429)) break;
+        const wait = delayMs != null ? Math.min(delayMs + 1000, 65000) : Math.min(5000 * 2 ** attempt, 30000);
+        log(`${model}: 429, ${Math.round(wait / 1000)}초 뒤 재시도 ${attempt + 1}/${MAX_RETRIES_429}`);
+        await sleep(wait);
+        continue;
+      }
+      if (res.status >= 500) {
         lastError = new Error(`Gemini ${res.status}(${model}): ${bodyText.slice(0, 200)}`);
         log(`${model}: ${res.status}, 재시도 ${attempt + 1}/${maxRetries}`);
         if (attempt < maxRetries) await sleep(Math.min(3000 * 2 ** attempt, 30000)); // 3, 6, 12, 24, 30초
