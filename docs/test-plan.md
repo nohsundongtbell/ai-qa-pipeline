@@ -92,7 +92,7 @@
 - 앱이 `npm start`로 정상 기동된다.
 - 요구사항 문서와 TC가 리뷰를 마쳤다.
 
-**종료 기준 (Go/No-Go 후보)**
+**종료 기준 (Go/No-Go 후보)** — 실제 판정 기준은 [quality-gate.json](../quality-gate.json)이며, CI의 `metrics` job이 매 main push마다 평가합니다. 기준을 바꾸면 이 표도 함께 갱신하세요.
 
 | 항목 | 기준 |
 |---|---|

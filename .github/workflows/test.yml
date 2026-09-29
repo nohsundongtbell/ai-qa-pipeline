@@ -57,3 +57,72 @@ jobs:
           name: test-results
           path: test-results/
           retention-days: 14
+
+      # 지표 job이 이어받는 결과 JSON (테스트가 실패해도 올린다)
+      - name: 결과 JSON 업로드
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: test-report.json
+          retention-days: 14
+
+  # 지표 이력 저장 + 품질 게이트(Go/No-Go). main push에서만 실행한다.
+  # 이력은 별도 브랜치(metrics-data)의 history.jsonl에 쌓는다. 쓰기 권한은 이 job에만 준다.
+  metrics:
+    needs: test
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: metrics-data
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: 결과 JSON 내려받기
+        uses: actions/download-artifact@v4
+        with:
+          name: test-report
+
+      # metrics-data 브랜치를 metrics-work 폴더에 준비한다. 브랜치가 아직 없으면 빈 브랜치로 시작한다.
+      - name: 지표 브랜치 준비
+        run: |
+          git config user.name "qa-metrics[bot]"
+          git config user.email "qa-metrics@users.noreply.github.com"
+          if git fetch origin metrics-data:refs/remotes/origin/metrics-data 2>/dev/null; then
+            git worktree add --detach metrics-work origin/metrics-data
+          else
+            git worktree add --detach metrics-work HEAD
+            (cd metrics-work && git checkout -q --orphan metrics-data && git rm -rfq . && \
+              printf '# metrics-data\n\n자동 생성되는 품질 지표 이력(history.jsonl)입니다. 직접 수정하지 마세요.\n' > README.md && git add README.md)
+          fi
+
+      # 푸시가 충돌하면(동시 실행) 최신 이력을 받아 다시 기록한다. 같은 실행 ID는 교체되므로 다시 해도 안전하다.
+      - name: 지표 기록과 저장
+        run: |
+          for attempt in 1 2 3; do
+            node scripts/metrics.js record --history metrics-work/history.jsonl
+            (cd metrics-work && git add -A && (git diff --cached --quiet || git commit -qm "metrics: run ${{ github.run_id }}") && git push origin HEAD:metrics-data) && exit 0
+            echo "push 실패 (시도 $attempt), 최신 이력을 받아 다시 시도합니다."
+            (cd metrics-work && git fetch origin metrics-data && git reset -q --hard FETCH_HEAD)
+          done
+          echo "::warning::지표 이력 저장에 실패했습니다."
+
+      - name: 추세 요약
+        run: node scripts/metrics.js summary --history metrics-work/history.jsonl --last 10 >> "$GITHUB_STEP_SUMMARY"
+
+      # NO-GO(기준 미충족)면 job을 실패시킨다. HOLD(확인 불가 항목 있음)는 경고로 표시하고 통과시킨다.
+      - name: 품질 게이트 (Go/No-Go)
+        run: node scripts/metrics.js gate --enforce --history metrics-work/history.jsonl
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}

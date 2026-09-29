@@ -56,6 +56,8 @@ function parseResults(json) {
     durationMs: (json.stats && json.stats.duration) || tests.reduce((s, t) => s + t.duration, 0),
     failures: tests.filter((t) => t.status === 'unexpected'),
     flakies: tests.filter((t) => t.status === 'flaky'),
+    tests, // 전체 목록 (scripts/metrics.js가 TC 단위 지표를 계산할 때 사용)
+    startTime: (json.stats && json.stats.startTime) || '',
   };
 }
 

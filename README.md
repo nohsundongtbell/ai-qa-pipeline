@@ -137,6 +137,33 @@ node scripts/heal.js apply --tc TC-072 --jira    # 앱 결함 분석을 Jira에 
 
 CI에서 main이 깨졌다면 최신 main을 받아 로컬에서 `npx playwright test`로 재현한 뒤 `/heal`을 실행하세요.
 
+## 배포 지표와 품질 게이트 (Go/No-Go)
+
+CI의 `metrics` job이 main push마다 지표를 계산해 `metrics-data` 브랜치의 `history.jsonl`에 쌓고(한 줄이 한 번의 실행), 품질 게이트를 평가합니다.
+
+| 지표 | 정의 |
+|---|---|
+| 통과율 | (통과 + flaky) / (통과 + flaky + 실패), 건너뜀 제외. P1/P2/P3별로도 계산 |
+| Flaky 비율 | 재시도 후에야 통과한 테스트 / 전체 테스트 |
+| 요구사항 커버리지 | 실행된 TC가 1건 이상 있는 REQ / 전체 REQ (모든 TC가 통과한 REQ 비율도 함께 기록) |
+| 결함 탐지 수, 평균 수정 시간 | TC가 처음 실패한 실행 ~ 다시 통과한 실행 사이 (**테스트 실패를 결함의 대용치로 쓴 값**, 전체 실행만) |
+
+**게이트 기준** ([quality-gate.json](quality-gate.json)): P1 통과율 100%, 전체 통과율 95% 이상, flaky 5% 이하, 요구사항 커버리지 100%, 미해결 Critical 결함(Jira) 0건. 실행 시간 회귀(최근 평균의 1.5배)는 참고용입니다.
+
+| 판정 | 의미 | CI |
+|---|---|---|
+| ✅ GO | 모든 필수 기준 충족 | 통과 |
+| ❌ NO-GO | 기준 미충족 | **실패** (`--enforce`) |
+| ⚠️ HOLD | 확인할 수 없는 기준이 있음 (예: Jira 조회 실패). 통과로 간주하지 않음 | 통과 + 경고 (`--strict`이면 NO-GO) |
+
+최종 배포 결정은 사람이 합니다. "미해결 Critical 결함"은 Jira에서 `priority = Highest`이고 완료되지 않은 이슈를 셉니다 (`JIRA_CRITICAL_JQL`로 변경). 자동으로 등록되는 이슈는 우선순위를 지정하지 않으므로, 사람이 심각도를 정해야 이 기준에 잡힙니다.
+
+```bash
+npm run metrics:record    # test-report.json으로 지표를 계산해 metrics/history.jsonl에 기록 (로컬용)
+npm run metrics:summary   # 추세와 결함 탐지 수/평균 수정 시간
+npm run gate              # 게이트 판정 (--enforce, --strict 옵션)
+```
+
 ## 에이전트 오케스트레이션 (역할 분업)
 
 Claude Code 서브에이전트(`.claude/agents/`)로 역할을 나누고, `/qa-pipeline` 명령이 순서대로 엮습니다.

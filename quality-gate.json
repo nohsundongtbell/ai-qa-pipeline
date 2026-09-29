@@ -1,0 +1,11 @@
+{
+  "_설명": "품질 게이트(Go/No-Go) 기준. metric은 scripts/metrics.js가 계산한 값의 경로이고, level이 warn이면 표시만 하고 판정에는 쓰지 않는다. 기준을 바꾸면 docs/test-plan.md의 종료 기준도 함께 갱신할 것.",
+  "criteria": [
+    { "id": "p1PassRate", "label": "P1 TC 통과율(%)", "metric": "byPriority.P1.passRate", "op": ">=", "value": 100 },
+    { "id": "passRate", "label": "전체 통과율(%)", "metric": "tests.passRate", "op": ">=", "value": 95 },
+    { "id": "flakyRate", "label": "Flaky 비율(%)", "metric": "tests.flakyRate", "op": "<=", "value": 5 },
+    { "id": "reqCoverage", "label": "요구사항 커버리지(%)", "metric": "coverage.pct", "op": ">=", "value": 100 },
+    { "id": "openCritical", "label": "미해결 Critical 결함(건, Jira)", "metric": "jira.openCritical", "op": "<=", "value": 0 },
+    { "id": "durationRegression", "label": "실행 시간(최근 평균 대비 배율)", "metric": "trend.durationRatio", "op": "<=", "value": 1.5, "level": "warn" }
+  ]
+}
