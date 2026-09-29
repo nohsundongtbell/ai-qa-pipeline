@@ -63,8 +63,7 @@ test.describe('회원가입/로그인 화면', () => {
     await page.goto('/');
     await expect(page.getByText(`${u.nickname} 님`)).toBeVisible();
     await page.reload();
-    // [데모 2/3] 같은 TC가 다시 실패하면 새 이슈 대신 기존 이슈에 코멘트가 붙는지 확인용 (곧 원복)
-    await expect(page.getByText(`${u.nickname} 님 (일부러 실패)`)).toBeVisible();
+    await expect(page.getByText(`${u.nickname} 님`)).toBeVisible();
   });
 
   test('TC-033 화면에서 로그아웃하면 로그인/회원가입 링크가 보인다 (REQ-005)', async ({ page, makeUser }) => {
