@@ -8,4 +8,5 @@ test-results/
 playwright-report/
 test-data/
 test-report.json
+heal-work/
 junit.xml

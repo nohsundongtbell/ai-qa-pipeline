@@ -107,6 +107,36 @@ npm run test:report   # 보고 스크립트 검증 (가짜 Slack/Jira 서버 사
 npm run notify:dry    # 마지막 테스트 결과(test-report.json)로 전송 내용만 출력 (전송 안 함)
 ```
 
+## AI 셀프 힐링 (반자동)
+
+테스트가 깨졌을 때 원인을 **앱 결함**과 **테스트 코드 문제**로 나누고, 테스트 코드 문제만 수정안을 PR로 올립니다.
+API 키 없이 Claude Code 세션에서 진단하고, 검사와 재검증, 브랜치/PR 생성은 스크립트가 맡습니다.
+
+```
+/heal            # Claude Code에서 실행 (.claude/commands/heal.md). 특정 TC만: /heal TC-102
+```
+
+| 분류 | 처리 |
+|---|---|
+| 앱 결함 | **코드를 수정하지 않고** Jira 분석 코멘트만 남김 (앱 코드도 자동으로 고치지 않음) |
+| 테스트 코드 문제 | 안전장치 검사 → 적용 → 해당 테스트 재실행 → 통과하면 draft PR (자동 머지 없음) |
+| 불안정/판단 불가/신뢰도 낮음 | 코드 변경 없음, 사람이 확인 |
+
+안전장치(`scripts/heal-guard.js`)는 진단이 틀려도 앱 결함을 덮지 못하게 코드로 막습니다.
+- `tests/` 아래 `.ts/.js`만 수정 가능 (앱 코드, 문서, 워크플로, 스크립트 불가)
+- 검증 조건(matcher, 기대값)과 숫자 값(상태 코드, 개수, 타임아웃) 변경 금지, `expect` 삭제 금지
+- `skip`/`fixme`/`only`, `.catch(`, `force: true` 추가 금지, 수정 3곳/30줄 이하
+- 수정 후에도 해당 TC가 실제로 통과해야 채택, 통과하지 못하면 원상복구
+
+```bash
+node scripts/heal.js context                     # 실패 TC별 분석 자료 생성 (heal-work/)
+node scripts/heal.js apply --tc TC-102           # 진단 검사, 적용, 재검증 후 원상복구 (미리보기)
+node scripts/heal.js apply --tc TC-102 --pr      # 브랜치 push와 draft PR 생성 (GH_TOKEN이 없으면 PR 링크 출력)
+node scripts/heal.js apply --tc TC-072 --jira    # 앱 결함 분석을 Jira에 등록 (JIRA_* 환경변수 필요)
+```
+
+CI에서 main이 깨졌다면 최신 main을 받아 로컬에서 `npx playwright test`로 재현한 뒤 `/heal`을 실행하세요.
+
 ## 폴더 구조
 
 ```

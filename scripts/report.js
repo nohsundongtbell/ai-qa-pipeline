@@ -171,6 +171,18 @@ function jiraClient(env, fetchImpl) {
         },
       }),
     comment: (key, failure, ctx) => call('POST', `/rest/api/3/issue/${key}/comment`, { body: jiraBody(failure, ctx) }),
+    // 본문을 직접 넘기는 범용 버전 (scripts/heal.js에서 AI 분석 결과를 남길 때 사용)
+    createIssue: ({ summary, labels, description }) =>
+      call('POST', '/rest/api/3/issue', {
+        fields: {
+          project: { key: project },
+          issuetype: { name: env.JIRA_ISSUE_TYPE || 'Bug' },
+          summary: summary.slice(0, 250),
+          labels,
+          description,
+        },
+      }),
+    addComment: (key, body) => call('POST', `/rest/api/3/issue/${key}/comment`, { body }),
   };
 }
 
@@ -273,7 +285,7 @@ async function main() {
   console.log(`요약: 통과 ${summary.passed}, 실패 ${summary.failed}, 건너뜀 ${summary.skipped}, flaky ${summary.flaky}`);
 }
 
-module.exports = { parseResults, buildSlackPayload, runContext, run };
+module.exports = { parseResults, buildSlackPayload, runContext, run, jiraClient, adf };
 
 if (require.main === module) {
   main().catch((e) => {
