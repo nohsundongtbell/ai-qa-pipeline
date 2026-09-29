@@ -30,7 +30,8 @@
     (async () => {
       const user = await renderNav();
       const id = getParam('id');
-      const { ok, status, data } = await api('GET', `/api/posts/${encodeURIComponent(id || '')}`);
+      if (!id) return showMessage('게시글을 찾을 수 없습니다.', true);
+      const { ok, status, data } = await api('GET', `/api/posts/${encodeURIComponent(id)}`);
       if (!ok) {
         return showMessage(status === 404 ? '게시글을 찾을 수 없습니다.' : '불러오지 못했습니다.', true);
       }

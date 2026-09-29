@@ -64,10 +64,27 @@ $env:PORT=3001; $env:DB_PATH="test.db"; npm start
 
 자세한 요구사항과 검증 규칙은 [docs/requirements.md](docs/requirements.md)를 참고하세요.
 
+## 테스트 (Playwright)
+
+```bash
+npm install
+npx playwright install chromium   # 최초 1회
+npm test                          # 전체 실행 (테스트 서버는 자동으로 띄움)
+npm run test:api                  # API 테스트만
+npm run test:ui                   # UI 테스트만
+npm run report                    # HTML 리포트 열기
+```
+
+- 테스트 서버는 전용 포트(3100~3102)와 `test-data/`의 임시 DB를 쓰므로 개발용 서버(3000)와 `board.db`에 영향이 없습니다.
+- 테스트 이름에 TC ID가 들어 있어 [docs/test-cases.md](docs/test-cases.md)와 대응합니다.
+- 실패 시 스크린샷과 trace가 `test-results/`에 저장됩니다 (`npx playwright show-trace <trace.zip>`).
+
 ## 폴더 구조
 
 ```
 docs/requirements.md   요구사항 (REQ-001~014)
 src/                   서버 (app.js, server.js, db.js, routes/, middleware/)
 public/                프론트엔드 정적 파일
+tests/api, tests/ui    Playwright 테스트 (helpers/에 공통 fixture)
+playwright.config.ts   테스트 설정
 ```
