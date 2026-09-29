@@ -63,7 +63,8 @@ test.describe('회원가입/로그인 화면', () => {
     await page.goto('/');
     await expect(page.getByText(`${u.nickname} 님`)).toBeVisible();
     await page.reload();
-    await expect(page.getByText(`${u.nickname} 님`)).toBeVisible();
+    // [데모] CI 실패 확인용으로 일부러 틀린 기대값을 넣음 (머지 금지)
+    await expect(page.getByText(`${u.nickname} 님 (일부러 실패)`)).toBeVisible();
   });
 
   test('TC-033 화면에서 로그아웃하면 로그인/회원가입 링크가 보인다 (REQ-005)', async ({ page, makeUser }) => {
