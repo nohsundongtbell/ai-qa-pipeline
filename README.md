@@ -79,6 +79,34 @@ npm run report                    # HTML 리포트 열기
 - 테스트 이름에 TC ID가 들어 있어 [docs/test-cases.md](docs/test-cases.md)와 대응합니다.
 - 실패 시 스크린샷과 trace가 `test-results/`에 저장됩니다 (`npx playwright show-trace <trace.zip>`).
 
+## CI와 결과 보고 (Slack, Jira)
+
+`.github/workflows/test.yml`(GitHub Actions)과 `.gitlab-ci.yml`(GitLab CI)이 같은 흐름입니다.
+main push 또는 PR/MR에서 테스트를 돌리고, 끝나면 `scripts/report.js`가 결과를 보고합니다.
+
+- **Slack**: 통과/실패/건너뜀/flaky 건수, 실행 시간, 실패 TC 목록, 실행 링크를 전송
+- **Jira**: 실패한 TC마다 이슈를 만들고, 같은 TC의 **열린 이슈가 있으면 코멘트만 추가** (TC ID를 라벨로 구분)
+  - 이슈는 main push 등에서만 만들고 PR/MR에서는 Slack 보고만 합니다 (`JIRA_EVENTS`로 변경 가능)
+
+### 시크릿 설정 (없으면 해당 기능만 건너뜀)
+
+GitHub: Settings > Secrets and variables > Actions / GitLab: Settings > CI/CD > Variables
+
+| 이름 | 값 |
+|---|---|
+| `SLACK_WEBHOOK_URL` | Slack Incoming Webhook URL |
+| `JIRA_BASE_URL` | 예: `https://내도메인.atlassian.net` |
+| `JIRA_EMAIL` | Jira 계정 이메일 |
+| `JIRA_API_TOKEN` | Atlassian API 토큰 |
+| `JIRA_PROJECT_KEY` | 이슈를 만들 프로젝트 키 (예: `QA`) |
+
+### 로컬에서 확인
+
+```bash
+npm run test:report   # 보고 스크립트 검증 (가짜 Slack/Jira 서버 사용, 외부 전송 없음)
+npm run notify:dry    # 마지막 테스트 결과(test-report.json)로 전송 내용만 출력 (전송 안 함)
+```
+
 ## 폴더 구조
 
 ```
@@ -87,4 +115,5 @@ src/                   서버 (app.js, server.js, db.js, routes/, middleware/)
 public/                프론트엔드 정적 파일
 tests/api, tests/ui    Playwright 테스트 (helpers/에 공통 fixture)
 playwright.config.ts   테스트 설정
+scripts/               Slack/Jira 보고 스크립트와 그 테스트
 ```

@@ -30,6 +30,18 @@ jobs:
       - name: 테스트 실행
         run: npx playwright test
 
+      # 결과를 Slack으로 보내고, 실패한 TC는 Jira 이슈로 등록한다 (secrets가 없으면 건너뜀).
+      # Jira 이슈는 main push 등에서만 만든다 (PR은 Slack 보고만). 기준은 JIRA_EVENTS로 바꿀 수 있다.
+      - name: Slack 보고 및 Jira 이슈 등록
+        if: ${{ !cancelled() }}
+        run: node scripts/report.js
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+
       - name: HTML 리포트 업로드
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4

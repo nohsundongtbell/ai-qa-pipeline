@@ -17,7 +17,9 @@ export default defineConfig({
   reporter: [
     ['list'],
     ['html', { open: 'never' }],
-    ['json', { outputFile: 'test-results/results.json' }],
+    // test-results/는 실행마다 정리되므로 밖에 둔다 (scripts/report.js가 읽는다)
+    ['json', { outputFile: 'test-report.json' }],
+    ['junit', { outputFile: 'junit.xml' }], // GitLab의 테스트 결과 탭용
   ],
   use: {
     trace: 'retain-on-failure',

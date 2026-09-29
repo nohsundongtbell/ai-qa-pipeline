@@ -8,7 +8,10 @@
     "test": "playwright test",
     "test:api": "playwright test tests/api",
     "test:ui": "playwright test tests/ui",
-    "report": "playwright show-report"
+    "report": "playwright show-report",
+    "test:report": "node --test scripts/report.test.js",
+    "notify": "node scripts/report.js",
+    "notify:dry": "node scripts/report.js --dry-run"
   },
   "license": "MIT",
   "dependencies": {
