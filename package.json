@@ -9,14 +9,17 @@
     "test:api": "playwright test tests/api",
     "test:ui": "playwright test tests/ui",
     "report": "playwright show-report",
-    "test:report": "node --test scripts/report.test.js scripts/heal.test.js scripts/scope-check.test.js scripts/metrics.test.js",
+    "test:report": "node --test scripts/report.test.js scripts/heal.test.js scripts/scope-check.test.js scripts/metrics.test.js scripts/orchestrate.test.js",
     "metrics:record": "node scripts/metrics.js record",
     "metrics:summary": "node scripts/metrics.js summary",
     "gate": "node scripts/metrics.js gate",
     "scope:snapshot": "node scripts/scope-check.js snapshot",
     "heal:context": "node scripts/heal.js context",
     "notify": "node scripts/report.js",
-    "notify:dry": "node scripts/report.js --dry-run"
+    "notify:dry": "node scripts/report.js --dry-run",
+    "orchestrate": "node scripts/orchestrate.js all",
+    "orchestrate:heal": "node scripts/orchestrate.js heal",
+    "gemini:ping": "node scripts/orchestrate.js ping"
   },
   "license": "MIT",
   "dependencies": {

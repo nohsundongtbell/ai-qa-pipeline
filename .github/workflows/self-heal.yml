@@ -1,0 +1,128 @@
+name: Self-heal (Gemini)
+
+# main에서 "Playwright Tests"가 실패하면 자동으로 실행된다.
+#   1) 실패한 테스트를 Gemini가 진단 (앱 결함 / 테스트 코드 문제 / 불안정 / 판단 불가)
+#   2) 앱 결함 → 코드는 건드리지 않고 Jira에 분석 코멘트
+#   3) 테스트 코드 문제 → 안전장치 검사와 재검증을 통과한 수정안만 draft PR로 올림 (자동 병합 없음)
+#   4) 결과 요약을 Slack과 작업 요약에 남김
+# 필요한 시크릿: GEMINI_API_KEY (없으면 진단을 건너뛰고 경고만 남긴다)
+# 저장소 설정: Settings > Actions > General > "Allow GitHub Actions to create and approve pull requests" 를 켜야 PR이 만들어진다.
+# 참고: 기본 토큰(GITHUB_TOKEN)으로 만든 PR에서는 CI가 자동 실행되지 않는다. 필요하면 HEAL_GITHUB_TOKEN(개인 액세스 토큰)을 등록한다.
+
+on:
+  workflow_run:
+    workflows: ["Playwright Tests"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      ping_only:
+        description: "Gemini 키와 모델 연결만 확인하고 끝낸다"
+        type: boolean
+        default: true
+      run_id:
+        description: "진단할 Playwright Tests 실행 ID (ping_only가 꺼져 있을 때 필요)"
+        type: string
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+concurrency:
+  group: self-heal
+  cancel-in-progress: false
+
+jobs:
+  heal:
+    # 자동 실행은 main에 push되어 실패한 경우만. 수동 실행은 항상 허용
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'failure' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+      JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+      JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+      JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+      GH_TOKEN: ${{ secrets.HEAL_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+    steps:
+      # 키와 모델이 동작하는지만 확인 (Actions 탭에서 수동 실행)
+      - uses: actions/checkout@v4
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.ping_only }}
+
+      - uses: actions/setup-node@v4
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.ping_only }}
+        with:
+          node-version: 24
+
+      - name: Gemini 연결 확인
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.ping_only }}
+        run: node scripts/orchestrate.js ping
+
+      # 여기서부터 실제 진단 (실패한 main 커밋을 그대로 체크아웃한다)
+      - uses: actions/checkout@v4
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.ping_only) }}
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          token: ${{ secrets.HEAL_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.ping_only) }}
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: 실패한 실행의 결과 JSON 내려받기
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.ping_only) }}
+        uses: actions/download-artifact@v4
+        with:
+          name: test-report
+          path: heal-input
+          run-id: ${{ github.event.workflow_run.id || inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # "Playwright Tests"는 품질 게이트가 NO-GO여도 실패로 끝난다. 테스트는 전부 통과했다면 할 일이 없으므로
+      # 브라우저 설치 같은 무거운 단계 전에 실패한 테스트가 있는지부터 확인한다.
+      - name: 실패한 테스트가 있는지 확인
+        id: check
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.ping_only) }}
+        run: |
+          n=$(node -e "const {parseResults}=require('./scripts/report');console.log(parseResults(JSON.parse(require('fs').readFileSync('heal-input/test-report.json','utf8'))).failed)")
+          echo "failed=$n" >> "$GITHUB_OUTPUT"
+          echo "실패한 테스트: ${n}건"
+          if [ "$n" = "0" ]; then echo "테스트는 모두 통과했습니다 (품질 게이트 등 다른 이유로 실패한 실행). 진단할 것이 없어 종료합니다."; fi
+
+      - name: 의존성 설치
+        if: ${{ steps.check.outputs.failed != '' && steps.check.outputs.failed != '0' }}
+        run: npm ci
+
+      - name: Playwright 브라우저 설치 (수정안 재검증용)
+        if: ${{ steps.check.outputs.failed != '' && steps.check.outputs.failed != '0' }}
+        run: npx playwright install --with-deps chromium
+
+      # trace, 스크린샷, 페이지 스냅샷 (실패 시에만 만들어지므로 없어도 계속 진행)
+      - name: 실패 증거(스크린샷, 스냅샷) 내려받기
+        if: ${{ steps.check.outputs.failed != '' && steps.check.outputs.failed != '0' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: test-results
+          path: heal-input/test-results
+          run-id: ${{ github.event.workflow_run.id || inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Git 작성자 설정
+        if: ${{ steps.check.outputs.failed != '' && steps.check.outputs.failed != '0' }}
+        run: |
+          git config user.name "qa-self-heal[bot]"
+          git config user.email "qa-self-heal@users.noreply.github.com"
+
+      - name: 자동 진단과 처리
+        if: ${{ steps.check.outputs.failed != '' && steps.check.outputs.failed != '0' }}
+        run: node scripts/orchestrate.js heal --input heal-input --pr --jira

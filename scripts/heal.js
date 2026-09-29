@@ -212,11 +212,17 @@ function applyEdits(fixes, io) {
     for (const fix of fixes) {
       const rel = path.posix.normalize(fix.file.replace(/\\/g, '/'));
       const current = io.read(rel);
-      if (!originals.has(rel)) originals.set(rel, current);
-      if (current.split(fix.old_string).length - 1 !== 1) {
+      if (!originals.has(rel)) originals.set(rel, current); // 복구는 원본 그대로(줄바꿈 포함)
+      // Windows에서 git이 CRLF로 체크아웃한 파일도 다뤄야 하므로, 매칭은 LF로 정규화해서 하고
+      // 쓸 때는 파일이 원래 쓰던 줄바꿈으로 되돌린다.
+      const eol = current.includes('\r\n') ? '\r\n' : '\n';
+      const normalized = current.replace(/\r\n/g, '\n');
+      const oldS = fix.old_string.replace(/\r\n/g, '\n');
+      if (normalized.split(oldS).length - 1 !== 1) {
         throw new Error(`${rel}: 앞선 수정 뒤에 old_string이 정확히 1번 나오지 않습니다.`);
       }
-      io.write(rel, current.replace(fix.old_string, () => fix.new_string));
+      const updated = normalized.replace(oldS, () => fix.new_string.replace(/\r\n/g, '\n'));
+      io.write(rel, eol === '\r\n' ? updated.replace(/\n/g, '\r\n') : updated);
     }
   } catch (e) {
     restoreEdits(originals, io);
@@ -321,7 +327,11 @@ function repoSlug() {
 }
 
 async function createBranchAndPr({ tc, d, body, files, env }) {
-  const original = git('rev-parse', '--abbrev-ref', 'HEAD');
+  // CI는 브랜치가 아니라 특정 커밋(detached HEAD)을 체크아웃하므로, 돌아갈 때는 커밋 해시로 돌아간다.
+  // (그렇지 않으면 다음 TC의 수정이 앞선 TC의 수정 위에 쌓인다)
+  const originalRef = git('rev-parse', '--abbrev-ref', 'HEAD');
+  const originalSha = git('rev-parse', 'HEAD');
+  const goBack = originalRef === 'HEAD' ? ['checkout', '--detach', originalSha] : ['checkout', originalRef];
   const branch = `heal/${tc}-${new Date().toISOString().replace(/\D/g, '').slice(0, 12)}`;
   const base = env.HEAL_BASE || 'main';
   git('checkout', '-b', branch);
@@ -333,7 +343,7 @@ async function createBranchAndPr({ tc, d, body, files, env }) {
     );
     git('push', '-u', 'origin', branch);
   } finally {
-    git('checkout', original);
+    git(...goBack);
   }
   const slug = repoSlug();
   const token = env.GH_TOKEN || env.GITHUB_TOKEN;
@@ -366,25 +376,34 @@ async function cmdApply(args, env = process.env) {
   const d = normalizeDiagnosis(JSON.parse(read(diagPath)));
   console.log(`[${tc}] 분류: ${CLASS_LABEL[d.classification]} (신뢰도: ${d.confidence})\n${d.summary}\n`);
   fs.mkdirSync(WORK_DIR, { recursive: true });
+  // 호출한 쪽(scripts/orchestrate.js)이 처리 결과를 보고할 수 있도록 args._result 객체에 결과를 채운다
+  const setResult = (r) => args._result && Object.assign(args._result, { classification: d.classification, confidence: d.confidence, summary: d.summary, ...r });
 
   // 앱 결함, 불안정, 판단 불가: 코드를 절대 건드리지 않는다
   if (d.classification !== 'test_issue') {
     const c = jiraCommentBody(tc, d);
     fs.writeFileSync(path.join(WORK_DIR, `${tc}.jira-comment.md`), c.lines.join('\n\n'));
     console.log('코드를 수정하지 않았습니다. Jira 코멘트 초안:\n' + c.lines.map((l) => '  ' + l).join('\n'));
-    if (args.jira) await postToJira(tc, d, env);
+    let jiraKey = null;
+    if (args.jira) jiraKey = await postToJira(tc, d, env);
+    setResult({ action: 'no_code_change', jiraKey });
     return 0;
   }
 
   if (CONFIDENCE.indexOf(d.confidence) < CONFIDENCE.indexOf(env.HEAL_MIN_CONFIDENCE || 'medium')) {
     console.log('신뢰도가 낮아 자동 수정하지 않습니다. 사람이 원인을 확인해 주세요. (코드 변경 없음)');
+    setResult({ action: 'low_confidence' });
     return 4;
   }
 
-  const guard = checkFixes(d.fixes, (rel) => read(rel));
+  const guard = checkFixes(d.fixes, (rel) => read(rel).replace(/\r\n/g, '\n')); // CRLF 파일도 LF 기준으로 검사
   if (!guard.ok) {
     console.log('🚫 안전장치가 수정안을 거절했습니다 (코드 변경 없음):\n' + guard.reasons.map((r) => `  - ${r}`).join('\n'));
     console.log('\n이 실패가 앱 결함일 수 있습니다. 진단을 다시 검토하고, 앱 결함이면 classification을 app_defect로 바꿔 Jira에 남기세요.');
+    // 거절 사유는 앱 결함의 신호일 수 있으므로 Jira에 분석과 거절 사유를 남긴다 (코드는 그대로)
+    let jiraKey = null;
+    if (args.jira) jiraKey = await postToJira(tc, { ...d, summary: `${d.summary} (자동 수정안이 안전 검사에서 거절됨: ${guard.reasons.join(' / ')})` }, env);
+    setResult({ action: 'guard_rejected', reasons: guard.reasons, jiraKey });
     return 2;
   }
   if (args.pr && git('status', '--porcelain')) {
@@ -396,6 +415,7 @@ async function cmdApply(args, env = process.env) {
     originals = applyEdits(d.fixes, realIo);
   } catch (e) {
     console.log(`수정안을 적용하지 못했습니다 (코드 변경 없음): ${e.message}`);
+    setResult({ action: 'apply_failed', reasons: [e.message] });
     return 2;
   }
 
@@ -404,6 +424,7 @@ async function cmdApply(args, env = process.env) {
   if (!verify.passed) {
     restoreEdits(originals, realIo);
     console.log('❌ 수정 후에도 테스트가 실패합니다. 원상복구했습니다.\n' + verify.output);
+    setResult({ action: 'verify_failed' });
     return 3;
   }
   console.log('✅ 재검증 통과');
@@ -415,9 +436,11 @@ async function cmdApply(args, env = process.env) {
   if (!args.pr) {
     restoreEdits(originals, realIo);
     console.log(`\n(미리보기) 원상복구했습니다. PR 본문 초안: ${WORK_DIR}/${tc}.pr.md\n실제로 브랜치와 draft PR을 만들려면 --pr 을 붙여 다시 실행하세요.`);
+    setResult({ action: 'preview_ok', warnings: guard.warnings });
     return 0;
   }
-  await createBranchAndPr({ tc, d, body, files: [...originals.keys()], env });
+  const pr = await createBranchAndPr({ tc, d, body, files: [...originals.keys()], env });
+  setResult({ action: 'pr_created', branch: pr.branch, prUrl: pr.prUrl, warnings: guard.warnings });
   return 0;
 }
 
@@ -443,7 +466,7 @@ async function main() {
   return 1;
 }
 
-module.exports = { loadFailures, extractTestBlock, normalizeDiagnosis, applyEdits, restoreEdits, buildPrBody, jiraCommentBody, tcDoc, requirementText };
+module.exports = { WORK_DIR, CLASS_LABEL, createBranchAndPr, loadFailures, buildBundle, cmdApply, testSourcePath, extractTestBlock, normalizeDiagnosis, applyEdits, restoreEdits, buildPrBody, jiraCommentBody, tcDoc, requirementText };
 
 if (require.main === module) {
   main().then((code) => process.exit(code || 0), (e) => {

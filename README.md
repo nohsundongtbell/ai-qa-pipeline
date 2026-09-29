@@ -164,6 +164,39 @@ npm run metrics:summary   # 추세와 결함 탐지 수/평균 수정 시간
 npm run gate              # 게이트 판정 (--enforce, --strict 옵션)
 ```
 
+## 자동 오케스트레이션 (Gemini, CI에서 자동 실행)
+
+Claude Code 세션 없이 CI에서 돌아가는 자동 버전입니다. `main`에서 테스트가 실패하면 `.github/workflows/self-heal.yml`이 시작됩니다.
+
+```
+테스트 실패(main) → 실패 증거 내려받기 → Gemini가 원인 진단 → 안전장치 검사 + 재검증
+   ├ 앱 결함        → 코드는 그대로, Jira에 분석 코멘트 (열린 이슈가 있으면 거기에 추가)
+   ├ 테스트 코드 문제 → 검사와 재검증을 통과한 수정안만 draft PR (자동 병합 없음)
+   └ 그 외/거절     → 코드 변경 없음, Jira에 사유 기록
+→ Slack과 작업 요약에 결과 표
+```
+
+| 역할 | 자동 버전에서 누가 하나 |
+|---|---|
+| Runner | Playwright 실행 + `scripts/report.js` (기존 CI) |
+| Healer | **진단만 Gemini**, 검사·재검증·PR은 `scripts/heal.js` (진단 모델과 무관하게 같은 안전장치) |
+| Reporter | `scripts/metrics.js` (지표 이력, 품질 게이트) |
+| Planner, Writer | 자동화하지 않음. TC와 테스트 코드는 사람이 검토해야 해서 Claude Code(`/qa-pipeline`)에서 진행 |
+
+**설정 (한 번만)**
+1. GitHub Secrets에 `GEMINI_API_KEY` 등록 (이름은 대소문자를 구분하지 않아 `Gemini_API_Key`로 만들어도 됨)
+2. Settings > Actions > General > **"Allow GitHub Actions to create and approve pull requests"** 켜기 (PR 생성에 필요)
+3. Actions 탭 > **Self-heal (Gemini)** > Run workflow (`ping_only` 켠 채로)로 키와 모델이 동작하는지 확인
+4. (선택) 자동 생성 PR에서도 CI가 돌게 하려면 개인 액세스 토큰을 `HEAL_GITHUB_TOKEN`으로 등록. 기본 토큰으로 만든 PR은 CI가 자동 실행되지 않음
+
+```bash
+npm run gemini:ping          # 키와 모델 확인 (GEMINI_API_KEY 환경변수 필요)
+npm run orchestrate:heal     # 실패한 테스트를 진단하고 미리보기 (PR/Jira에는 올리지 않음)
+npm run orchestrate          # 테스트 실행 → 진단(미리보기) → 지표 기록
+```
+
+**알아 둘 것**: 무료 등급은 호출 횟수 제한이 있고 보낸 내용이 서비스 개선에 쓰일 수 있습니다. 한 번에 진단하는 실패는 기본 3건입니다(`HEAL_MAX_FAILURES`). 모델은 `GEMINI_MODEL`(쉼표로 후보 여러 개)로 바꿀 수 있습니다. 진단 정확도는 모델에 달려 있어서, 수정안은 안전장치를 통과해도 **PR 검토는 사람이 합니다.**
+
 ## 에이전트 오케스트레이션 (역할 분업)
 
 Claude Code 서브에이전트(`.claude/agents/`)로 역할을 나누고, `/qa-pipeline` 명령이 순서대로 엮습니다.

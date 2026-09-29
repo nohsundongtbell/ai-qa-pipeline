@@ -11,3 +11,5 @@ test-report.json
 heal-work/
 metrics/
 junit.xml
+heal-input/
+~$*

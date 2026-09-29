@@ -176,3 +176,83 @@ test('PR 본문: 분류, 근거, 재검증, 사람 확인 체크리스트, 자�
     assert.ok(body.includes(s), s);
   }
 });
+
+// ----- CI(detached HEAD)에서 여러 TC를 PR 브랜치로 올릴 때 서로 섞이지 않는지: 실제 git으로 검증 -----
+test('PR 브랜치: detached HEAD에서도 TC마다 원래 커밋에서 갈라져 나가고, 끝나면 원래 커밋으로 돌아온다', async () => {
+  const { execFileSync } = require('child_process');
+  const os = require('os');
+  const fs = require('fs');
+  const path = require('path');
+  const { createBranchAndPr } = require('./heal');
+  const g = (cwd, ...a) => execFileSync('git', a, { cwd, encoding: 'utf8' }).trim();
+
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'prbranch-'));
+  const remote = path.join(base, 'remote.git');
+  const work = path.join(base, 'work');
+  g(base, 'init', '-q', '--bare', '-b', 'main', remote);
+  g(base, 'clone', '-q', remote, work);
+  g(work, 'config', 'user.name', 't');
+  g(work, 'config', 'user.email', 't@t');
+  fs.mkdirSync(path.join(work, 'tests'));
+  fs.writeFileSync(path.join(work, 'tests', 'a.spec.ts'), 'A0\n');
+  fs.writeFileSync(path.join(work, 'tests', 'b.spec.ts'), 'B0\n');
+  g(work, 'add', '-A');
+  g(work, 'commit', '-qm', 'base');
+  g(work, 'push', '-q', 'origin', 'HEAD:main');
+  const baseSha = g(work, 'rev-parse', 'HEAD');
+  g(work, 'checkout', '-q', '--detach', baseSha); // Actions의 checkout처럼 브랜치 없이 커밋만 체크아웃
+
+  const cwd = process.cwd();
+  process.chdir(work);
+  const logs = [];
+  const origLog = console.log;
+  console.log = (m) => logs.push(m);
+  try {
+    const d = { classification: 'test_issue', summary: '요약' };
+    // TC-101: a.spec.ts 수정
+    fs.writeFileSync('tests/a.spec.ts', 'A1\n');
+    const r1 = await createBranchAndPr({ tc: 'TC-101', d, body: 'b', files: ['tests/a.spec.ts'], env: {} });
+    assert.equal(g(work, 'rev-parse', 'HEAD'), baseSha, '첫 PR 뒤에 원래 커밋으로 돌아와야 함');
+    assert.equal(g(work, 'status', '--porcelain'), '', '작업 트리가 깨끗해야 함');
+    assert.equal(g(work, 'rev-parse', '--abbrev-ref', 'HEAD'), 'HEAD', '여전히 detached');
+    assert.equal(fs.readFileSync('tests/a.spec.ts', 'utf8').replace(/\r/g, ''), 'A0\n', '원래 커밋의 내용이어야 함');
+
+    // TC-102: b.spec.ts 수정 (첫 번째 수정이 섞여 들어오면 안 됨)
+    fs.writeFileSync('tests/b.spec.ts', 'B1\n');
+    const r2 = await createBranchAndPr({ tc: 'TC-102', d, body: 'b', files: ['tests/b.spec.ts'], env: {} });
+    assert.equal(g(work, 'rev-parse', 'HEAD'), baseSha);
+
+    for (const b of [r1.branch, r2.branch]) {
+      assert.equal(g(work, 'rev-parse', `${b}^`), baseSha, `${b}의 부모는 원래 커밋이어야 함`);
+      assert.match(g(work, 'ls-remote', '--heads', 'origin', b), /refs\/heads\//, `${b}가 원격에 push되어야 함`);
+    }
+    assert.deepEqual(g(work, 'diff', '--name-only', baseSha, r1.branch).split('\n'), ['tests/a.spec.ts']);
+    assert.deepEqual(g(work, 'diff', '--name-only', baseSha, r2.branch).split('\n'), ['tests/b.spec.ts']);
+    assert.match(r1.branch, /^heal\/TC-101-/);
+    assert.equal(r1.prUrl, ''); // 토큰이 없으면 PR 대신 브랜치만 올리고 링크를 안내한다
+    assert.ok(logs.some((l) => String(l).includes('compare')), '수동 PR 링크 안내가 있어야 함');
+  } finally {
+    console.log = origLog;
+    process.chdir(cwd);
+  }
+});
+
+test('CRLF 파일(Windows 체크아웃): 여러 줄 수정안도 적용되고, 원래 줄바꿈이 유지되며, 복구하면 원본과 바이트까지 같다', () => {
+  const orig = "line1\r\nawait a.click();\r\nawait expect(x).toBe(1);\r\nline4\r\n";
+  const mem = { 'tests/w.ts': orig };
+  const io = { read: (p) => mem[p], write: (p, c) => (mem[p] = c) };
+
+  // LF로 쓴 여러 줄 old_string이 CRLF 파일에서도 매칭된다
+  const originals = applyEdits([{ file: 'tests/w.ts', old_string: 'await a.click();\nawait expect(x).toBe(1);', new_string: 'await b.click();\nawait expect(x).toBe(1);' }], io);
+  assert.equal(mem['tests/w.ts'], "line1\r\nawait b.click();\r\nawait expect(x).toBe(1);\r\nline4\r\n"); // 줄바꿈 CRLF 유지
+  assert.ok(!/[^\r]\n/.test(mem['tests/w.ts']), 'LF 단독 줄바꿈이 섞이면 안 됨');
+  restoreEdits(originals, io);
+  assert.equal(mem['tests/w.ts'], orig);
+
+  // 안전 검사도 CRLF 파일을 LF로 정규화해서 읽으면 통과/거절이 정확히 나뉜다
+  const read = (p) => mem[p].replace(/\r\n/g, '\n');
+  assert.equal(checkFixes([{ file: 'tests/w.ts', old_string: 'await a.click();', new_string: 'await b.click();' }], read).ok, true);
+  const cheat = checkFixes([{ file: 'tests/w.ts', old_string: 'await a.click();\nawait expect(x).toBe(1);', new_string: 'await a.click();\nawait expect(x).toBe(2);' }], read);
+  assert.equal(cheat.ok, false);
+  assert.match(cheat.reasons.join(), /검증 조건|숫자 값/); // "0번 발견"이 아니라 기대값 변경 때문에 거절되어야 함
+});
