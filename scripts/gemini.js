@@ -9,8 +9,10 @@
  * 주의: 무료 등급은 호출 횟수 제한이 있고, 보낸 내용이 서비스 개선에 쓰일 수 있다. 민감한 코드나 데이터는 보내지 않는다.
  */
 // 모델은 자주 폐기된다 (2.5-flash, 2.0-flash는 이미 종료됨). 그래서 404 응답이 안내하는 새 모델을 자동으로 이어서 시도한다.
-// 무료 등급의 한도는 모델마다 따로 잡히는 경우가 많아, 한 모델이 한도에 걸리면 다른 모델로 넘어간다 (없는 이름은 404로 건너뜀)
-const DEFAULT_MODELS = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-flash-lite-latest'];
+// 무료 등급의 한도는 모델마다 따로 잡힌다 (AI Studio 사용량 화면 기준: 3.8 Flash는 하루 20회, Flash Lite 계열은 하루 500회).
+// 그래서 품질이 좋은 모델을 먼저 쓰고, 일일 한도에 걸리면 Lite 모델로 넘어간다. 없는 이름은 404로 건너뛴다.
+// 모델 ID는 화면의 모델 이름(예: "Gemini 3.5 Flash Lite")을 소문자와 하이픈으로 바꾼 추정값이다.
+const DEFAULT_MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
 const DEFAULT_BASE = 'https://generativelanguage.googleapis.com';
 const MAX_TOKENS_CAP = 32768;
 const MAX_RETRIES_429 = 2;
