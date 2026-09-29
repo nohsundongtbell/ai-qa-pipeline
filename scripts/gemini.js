@@ -8,7 +8,8 @@
  * 환경변수: GEMINI_API_KEY (필수), GEMINI_MODEL (쉼표로 후보 여러 개 가능), GEMINI_BASE_URL (테스트용)
  * 주의: 무료 등급은 호출 횟수 제한이 있고, 보낸 내용이 서비스 개선에 쓰일 수 있다. 민감한 코드나 데이터는 보내지 않는다.
  */
-const DEFAULT_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+// 모델은 자주 폐기된다 (2.5-flash, 2.0-flash는 이미 종료됨). 그래서 404 응답이 안내하는 새 모델을 자동으로 이어서 시도한다.
+const DEFAULT_MODELS = ['gemini-3.8-flash', 'gemini-flash-latest'];
 const DEFAULT_BASE = 'https://generativelanguage.googleapis.com';
 
 const sleepReal = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -44,8 +45,13 @@ async function generateJson({
 }) {
   if (!apiKey) throw new Error('GEMINI_API_KEY가 없습니다.');
   let lastError = null;
+  const queue = [...models];
+  const tried = new Set();
 
-  for (const model of models) {
+  while (queue.length) {
+    const model = queue.shift();
+    if (tried.has(model)) continue;
+    tried.add(model);
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       let res;
       try {
@@ -75,7 +81,14 @@ async function generateJson({
       }
       if (res.status === 404 || (res.status === 400 && /model/i.test(bodyText) && /not (found|supported)|invalid/i.test(bodyText))) {
         lastError = new Error(`Gemini 모델을 사용할 수 없습니다(${model}): ${bodyText.slice(0, 200)}`);
-        log(`${model}: 사용할 수 없어 다음 모델을 시도합니다.`);
+        // 폐기된 모델이면 응답이 "use models/<새 모델>"로 대체 모델을 알려 준다. 그 모델을 가장 먼저 시도한다.
+        const suggested = bodyText.match(/use models\/([A-Za-z0-9._-]+)/);
+        if (suggested && !tried.has(suggested[1])) {
+          queue.unshift(suggested[1]);
+          log(`${model}: 사용할 수 없어 안내된 ${suggested[1]} 모델을 시도합니다.`);
+        } else {
+          log(`${model}: 사용할 수 없어 다음 모델을 시도합니다.`);
+        }
         break; // 다음 모델로
       }
       if (!res.ok) {

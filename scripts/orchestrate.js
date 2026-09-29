@@ -302,6 +302,8 @@ if (require.main === module) {
     (code) => process.exit(code),
     (e) => {
       console.error(`오류: ${e.message}`);
+      // Actions 화면의 오류 주석으로도 남긴다 (로그인 없이도 원인을 확인할 수 있도록)
+      if (process.env.GITHUB_ACTIONS) console.error(`::error title=자동 오케스트레이션 실패::${String(e.message).replace(/\r?\n/g, ' ').slice(0, 400)}`);
       process.exit(1);
     }
   );

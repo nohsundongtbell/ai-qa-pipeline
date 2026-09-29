@@ -83,6 +83,31 @@ test('Gemini: 모델이 없으면(404) 다음 후보 모델로 넘어간다', as
   }
 });
 
+test('Gemini: 폐기된 모델이면 오류 메시지가 안내하는 새 모델을 후보보다 먼저 자동으로 시도한다 (실제 발생한 404 형태)', async () => {
+  const gone = 'This model models/gemini-2.0-flash is no longer available. Please update your code to use models/gemini-9.9-flash for the latest features.';
+  const { server, calls, url } = await mockGemini((c, res) => (c.url.includes('gemini-9.9-flash') ? ok(res, '{"from":"suggested"}') : fail(res, 404, gone)));
+  try {
+    const r = await call(url, { models: ['old-a', 'old-b'] });
+    assert.equal(r.model, 'gemini-9.9-flash');
+    assert.deepEqual(r.json, { from: 'suggested' });
+    assert.equal(calls.length, 2, '첫 후보가 404이면 나머지 후보(old-b)보다 안내된 모델을 먼저 시도해야 함');
+    assert.ok(calls[1].url.includes('gemini-9.9-flash'));
+  } finally {
+    server.close();
+  }
+});
+
+test('Gemini: 안내된 모델까지 없으면 무한 반복하지 않고 오류를 던진다', async () => {
+  const gone = (m) => `This model is no longer available. Please update your code to use models/${m} for the latest`;
+  const { server, calls, url } = await mockGemini((c, res) => fail(res, 404, c.url.includes('x1') ? gone('x2') : c.url.includes('x2') ? gone('x1') : gone('x1')));
+  try {
+    await assert.rejects(call(url, { models: ['start'] }), /사용할 수 없습니다/);
+    assert.ok(calls.length <= 3, `호출 ${calls.length}회`); // start → x1 → x2 (x1은 이미 시도해서 재시도하지 않음)
+  } finally {
+    server.close();
+  }
+});
+
 test('Gemini: 키 오류(401/403)는 재시도하지 않고 바로 실패한다', async () => {
   const { server, calls, url } = await mockGemini((c, res) => fail(res, 403, 'API key not valid'));
   try {
