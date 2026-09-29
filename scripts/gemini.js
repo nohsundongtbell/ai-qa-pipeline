@@ -39,7 +39,7 @@ async function generateJson({
   baseUrl = DEFAULT_BASE,
   fetchImpl = fetch,
   sleep = sleepReal,
-  maxRetries = 3,
+  maxRetries = 5, // 무료 등급의 503(과부하), 429는 수십 초 안에 풀리는 경우가 많아 대기를 길게 가져간다 (모델당 최대 약 75초)
   temperature = 0.2,
   maxOutputTokens = 16384, // 최근 모델은 답변 전에 "생각"하는 데도 이 한도를 쓰므로 넉넉히 잡는다
   log = () => {},
@@ -78,7 +78,7 @@ async function generateJson({
       if (res.status === 429 || res.status >= 500) {
         lastError = new Error(`Gemini ${res.status}(${model}): ${bodyText.slice(0, 200)}`);
         log(`${model}: ${res.status}, 재시도 ${attempt + 1}/${maxRetries}`);
-        if (attempt < maxRetries) await sleep(2000 * 2 ** attempt);
+        if (attempt < maxRetries) await sleep(Math.min(3000 * 2 ** attempt, 30000)); // 3, 6, 12, 24, 30초
         continue;
       }
       if (res.status === 404 || (res.status === 400 && /model/i.test(bodyText) && /not (found|supported)|invalid/i.test(bodyText))) {

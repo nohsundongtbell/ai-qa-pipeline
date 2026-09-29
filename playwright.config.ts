@@ -24,6 +24,8 @@ export default defineConfig({
   use: {
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
+    // 교육/시연용: SLOWMO=500 이면 동작마다 0.5초씩 멈춰서 로봇이 클릭하는 모습을 눈으로 볼 수 있다 (기본은 0)
+    launchOptions: { slowMo: Number(process.env.SLOWMO || 0) },
   },
   webServer: [server(MAIN), server(ISO_API), server(ISO_UI)],
   projects: [

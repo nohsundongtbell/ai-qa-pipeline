@@ -71,6 +71,34 @@ test('Gemini: 429는 재시도하고, 이후 성공하면 결과를 돌려준다
   }
 });
 
+test('Gemini: 503(과부하)이 여러 번 이어져도 길게 재시도해서 회복되면 성공한다 (실제 발생한 실패)', async () => {
+  const waits = [];
+  const { server, calls, url } = await mockGemini((c, res, n) => (n <= 5 ? fail(res, 503, '{"error":{"status":"UNAVAILABLE","message":"high demand"}}') : ok(res, '{"ok":1}')));
+  try {
+    const r = await call(url, { models: ['m1'], sleep: (ms) => (waits.push(ms), Promise.resolve()) });
+    assert.deepEqual(r.json, { ok: 1 });
+    assert.equal(calls.length, 6); // 최초 1회 + 재시도 5회
+    assert.deepEqual(waits, [3000, 6000, 12000, 24000, 30000], '대기는 2배씩 늘다가 30초에서 멈춰야 함');
+  } finally {
+    server.close();
+  }
+});
+
+test('Healer: 오류 메시지는 여러 줄이어도 한 줄로 합쳐 기록한다 (Actions 주석에 잘리지 않도록)', async () => {
+  await inTempDir(async () => {
+    const warns = [];
+    const out = await runHeal({
+      env: { GEMINI_API_KEY: 'k' },
+      log: () => {},
+      warn: (m) => warns.push(m),
+      deps: { loadFailures: () => [failure('001')], buildPrompt: fakePrompt, generate: async () => { throw new Error('Gemini 503: {\n  "error": {\n    "status": "UNAVAILABLE"\n  }\n}'); }, apply: async () => 0 },
+    });
+    assert.ok(!out.results[0].error.includes('\n'));
+    assert.match(out.results[0].error, /UNAVAILABLE/);
+    assert.ok(!warns.join('').includes('\n'));
+  });
+});
+
 test('Gemini: 모델이 없으면(404) 다음 후보 모델로 넘어간다', async () => {
   const { server, calls, url } = await mockGemini((c, res) => (c.url.includes('m1:') ? fail(res, 404, 'model not found') : ok(res, '{"from":"m2"}')));
   try {

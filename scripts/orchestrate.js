@@ -175,8 +175,9 @@ async function runHeal({ input = '.', env = process.env, flags = {}, max, log = 
       item.code = await d.apply({ tc, pr: !!flags.pr, jira: !!flags.jira, project: f.project, _result: result }, env);
       Object.assign(item, result);
     } catch (e) {
-      item.error = e.message;
-      warn(`${tc} 처리 중 오류: ${e.message}`);
+      // 여러 줄 메시지는 Actions 주석에서 첫 줄만 보이므로 한 줄로 합친다
+      item.error = String(e.message).replace(/\s+/g, ' ').slice(0, 400);
+      warn(`${tc} 처리 중 오류: ${item.error}`);
     }
     results.push(item);
   }

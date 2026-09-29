@@ -79,6 +79,20 @@ npm run report                    # HTML 리포트 열기
 - 테스트 이름에 TC ID가 들어 있어 [docs/test-cases.md](docs/test-cases.md)와 대응합니다.
 - 실패 시 스크린샷과 trace가 `test-results/`에 저장됩니다 (`npx playwright show-trace <trace.zip>`).
 
+## 교육용 데모 (배치 파일)
+
+Windows에서 **`run-test-demo.bat`을 더블클릭**하면 메뉴가 나옵니다. 명령을 입력할 필요가 없고, 처음 실행이면 필요한 프로그램(`npm install`)과 시험용 브라우저도 알아서 설치합니다. (Node.js는 미리 설치되어 있어야 합니다.)
+
+| 메뉴 | 내용 |
+|---|---|
+| 1. Playwright UI 모드 | 시험을 골라 실행하고, 브라우저가 움직이는 화면과 단계별 기록을 되감아 볼 수 있음 (**교육 추천**) |
+| 2. 브라우저 창을 띄워 천천히 실행 | 로봇이 클릭하고 입력하는 모습을 그대로 봄 (동작마다 0.6초 지연) |
+| 3. 전체 자동 실행 | 창 없이 약 30초 만에 전체 시험 결과 확인 |
+| 4. 게시판 앱만 실행 | `npm start`를 새 창에서 실행하고 브라우저로 열기 |
+| 5. 마지막 결과 리포트 | 통과/실패, 실패 화면 캡처 확인 |
+
+번호를 미리 지정할 수도 있습니다: `run-test-demo.bat 2 TC-102` (2번 메뉴로 TC-102 시험만 실행). 지연 시간은 환경변수 `SLOWMO`(밀리초)로 바꿀 수 있습니다.
+
 ## CI와 결과 보고 (Slack, Jira)
 
 `.github/workflows/test.yml`(GitHub Actions)과 `.gitlab-ci.yml`(GitLab CI)이 같은 흐름입니다.
