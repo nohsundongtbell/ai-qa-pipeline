@@ -9,7 +9,8 @@
     "test:api": "playwright test tests/api",
     "test:ui": "playwright test tests/ui",
     "report": "playwright show-report",
-    "test:report": "node --test scripts/report.test.js scripts/heal.test.js",
+    "test:report": "node --test scripts/report.test.js scripts/heal.test.js scripts/scope-check.test.js",
+    "scope:snapshot": "node scripts/scope-check.js snapshot",
     "heal:context": "node scripts/heal.js context",
     "notify": "node scripts/report.js",
     "notify:dry": "node scripts/report.js --dry-run"

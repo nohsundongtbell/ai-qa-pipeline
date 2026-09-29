@@ -137,6 +137,29 @@ node scripts/heal.js apply --tc TC-072 --jira    # 앱 결함 분석을 Jira에 
 
 CI에서 main이 깨졌다면 최신 main을 받아 로컬에서 `npx playwright test`로 재현한 뒤 `/heal`을 실행하세요.
 
+## 에이전트 오케스트레이션 (역할 분업)
+
+Claude Code 서브에이전트(`.claude/agents/`)로 역할을 나누고, `/qa-pipeline` 명령이 순서대로 엮습니다.
+
+| 에이전트 | 역할 | 수정 가능 범위 (`scripts/scope-check.js`가 사후 검사) |
+|---|---|---|
+| `qa-planner` | 요구사항 분석, 테스트 계획과 TC 설계 | `docs/test-plan.md`, `docs/test-cases.md` (요구사항은 사람의 것) |
+| `qa-writer` | TC를 Playwright 코드로 구현 | `tests/` |
+| `qa-runner` | 실행, 결과 수집, Slack 보고 미리보기 | 없음 (수정 도구 자체가 없음) |
+| `qa-healer` | 실패 분류, 셀프 힐링, Jira 초안 | 없음 (진단서는 `heal-work/`에만, 수정은 `heal.js`가 검사 후 처리) |
+| `qa-reporter` | 지표 집계와 품질 리포트 | `reports/` |
+
+```
+/qa-pipeline            # 전체: Planner → Writer → Runner → Healer → Reporter
+/qa-pipeline run        # 특정 단계만 (plan | write | run | heal | report)
+```
+
+- 순차 실행만 합니다 (Runner와 Healer가 같은 포트와 파일을 씀).
+- 에이전트 호출 전후로 `scope-check snapshot` / `check --role <역할>`을 실행해, 역할 밖의 파일이 바뀌면 다음 단계로 넘어가지 않습니다.
+- 사람 확인 지점: Planner가 만든 TC, PR 생성, Jira 등록. 최종 Go/No-Go도 사람이 결정합니다.
+- 에이전트는 서로의 대화를 볼 수 없어서, 단계 사이 정보(TC ID 목록, 실패 TC)는 오케스트레이터가 프롬프트와 파일로 전달합니다.
+- 알려진 한계: `Bash` 도구는 명령 단위로 제한할 수 없어서, `git push` 같은 명령을 막는 것은 지침에 의존합니다 (범위 검사는 파일 변경만 봅니다).
+
 ## 폴더 구조
 
 ```
