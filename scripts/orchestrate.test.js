@@ -156,6 +156,26 @@ test('Gemini: 차단, 빈 응답, 길이 초과, JSON 아님, 키 없음은 명�
   }
 });
 
+test('Gemini: 생각에 토큰을 다 써서 MAX_TOKENS가 나면 한도를 늘려 다시 요청한다 (실제 발생한 실패)', async () => {
+  const limits = [];
+  const { server, url } = await mockGemini((c, res) => {
+    limits.push(c.body.generationConfig.maxOutputTokens);
+    if (limits.length < 3) {
+      // 답변이 비어 있고 finishReason만 MAX_TOKENS인 경우 + 답변이 중간에 잘린 경우
+      res.writeHead(200);
+      return res.end(JSON.stringify({ candidates: [limits.length === 1 ? { finishReason: 'MAX_TOKENS' } : { content: { parts: [{ text: '{"a"' }] }, finishReason: 'MAX_TOKENS' }], usageMetadata: { thoughtsTokenCount: 3900 } }));
+    }
+    ok(res, '{"done":true}');
+  });
+  try {
+    const r = await call(url, { maxOutputTokens: 4096, models: ['m1'] });
+    assert.deepEqual(r.json, { done: true });
+    assert.deepEqual(limits, [4096, 8192, 16384], '한도가 2배씩 늘어나야 함');
+  } finally {
+    server.close();
+  }
+});
+
 test('모델 후보: GEMINI_MODEL이 있으면 쉼표로 나눠 쓰고, 없으면 기본값', () => {
   assert.deepEqual(modelsFromEnv({ GEMINI_MODEL: 'a, b' }), ['a', 'b']);
   assert.deepEqual(modelsFromEnv({}), DEFAULT_MODELS);

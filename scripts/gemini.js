@@ -11,6 +11,7 @@
 // 모델은 자주 폐기된다 (2.5-flash, 2.0-flash는 이미 종료됨). 그래서 404 응답이 안내하는 새 모델을 자동으로 이어서 시도한다.
 const DEFAULT_MODELS = ['gemini-3.8-flash', 'gemini-flash-latest'];
 const DEFAULT_BASE = 'https://generativelanguage.googleapis.com';
+const MAX_TOKENS_CAP = 32768;
 
 const sleepReal = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -40,10 +41,11 @@ async function generateJson({
   sleep = sleepReal,
   maxRetries = 3,
   temperature = 0.2,
-  maxOutputTokens = 4096,
+  maxOutputTokens = 16384, // 최근 모델은 답변 전에 "생각"하는 데도 이 한도를 쓰므로 넉넉히 잡는다
   log = () => {},
 }) {
   if (!apiKey) throw new Error('GEMINI_API_KEY가 없습니다.');
+  let tokens = maxOutputTokens;
   let lastError = null;
   const queue = [...models];
   const tried = new Set();
@@ -61,7 +63,7 @@ async function generateJson({
           body: JSON.stringify({
             systemInstruction: system ? { parts: [{ text: system }] } : undefined,
             contents: [{ role: 'user', parts }],
-            generationConfig: { responseMimeType: 'application/json', temperature, maxOutputTokens },
+            generationConfig: { responseMimeType: 'application/json', temperature, maxOutputTokens: tokens },
           }),
           signal: AbortSignal.timeout(90000),
         });
@@ -106,11 +108,19 @@ async function generateJson({
         throw new Error(`Gemini가 요청을 차단했습니다: ${data.promptFeedback.blockReason}`);
       }
       const cand = (data.candidates || [])[0];
+      // 길이 제한에 걸리면(생각에 토큰을 다 쓰면 답변이 비거나 잘린다) 한도를 2배로 늘려 다시 요청한다. 상한을 넘으면 포기한다.
+      if (cand && cand.finishReason === 'MAX_TOKENS') {
+        const u = data.usageMetadata || {};
+        if (tokens < MAX_TOKENS_CAP) {
+          tokens = Math.min(tokens * 2, MAX_TOKENS_CAP);
+          log(`${model}: 출력 길이 제한(생각 토큰 ${u.thoughtsTokenCount ?? '?'})에 걸려 한도를 ${tokens}으로 늘려 다시 요청합니다.`);
+          attempt--; // 재시도 횟수를 쓰지 않는다 (한도는 유한하게 늘어난다)
+          continue;
+        }
+        throw new Error(`Gemini 응답이 길이 제한으로 잘렸습니다(${model}, 한도 ${tokens}, 생각 토큰 ${u.thoughtsTokenCount ?? '?'}). 입력을 줄이세요.`);
+      }
       const text = cand && cand.content && (cand.content.parts || []).map((p) => p.text || '').join('');
       if (!text) throw new Error(`Gemini 응답이 비어 있습니다(${model}, finishReason=${cand ? cand.finishReason : '없음'}).`);
-      if (cand.finishReason === 'MAX_TOKENS') {
-        throw new Error(`Gemini 응답이 길이 제한으로 잘렸습니다(${model}). 입력을 줄이거나 maxOutputTokens를 늘리세요.`);
-      }
       try {
         return { json: parseJsonText(text), model, usage: data.usageMetadata || null, raw: text };
       } catch {
