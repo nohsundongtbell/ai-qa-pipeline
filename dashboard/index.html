@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QA 파이프라인 지표</title>
+  <meta name="description" content="AI 기반 QA 파이프라인이 main 브랜치의 실행마다 기록한 통과율·flaky·커버리지 추세">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="viz-root">
+    <header class="top">
+      <div>
+        <h1>QA 파이프라인 품질 지표</h1>
+        <p class="sub">main 브랜치에 push 될 때마다 CI가 Playwright 테스트(API·UI)를 실행하고 기록한 지표입니다. <span id="updated"></span></p>
+      </div>
+      <div class="range" role="group" aria-label="표시할 실행 범위">
+        <button type="button" data-range="10" aria-pressed="false">최근 10회</button>
+        <button type="button" data-range="30" aria-pressed="false">최근 30회</button>
+        <button type="button" data-range="all" aria-pressed="false">전체</button>
+      </div>
+    </header>
+
+    <p id="empty" class="empty" hidden>아직 기록된 실행이 없습니다. main 브랜치에 push 하면 CI가 첫 기록을 남깁니다.</p>
+
+    <section id="content" hidden>
+      <div class="tiles" id="tiles" aria-label="최근 실행 지표"></div>
+
+      <div class="grid">
+        <figure class="card">
+          <figcaption><h2>통과율</h2><p>(통과 + flaky) ÷ (통과 + flaky + 실패), 건너뜀 제외</p></figcaption>
+          <div class="chart" id="chart-pass"></div>
+        </figure>
+        <figure class="card">
+          <figcaption><h2>flaky 비율</h2><p>재시도 후에야 통과한 테스트 ÷ 전체 테스트</p></figcaption>
+          <div class="chart" id="chart-flaky"></div>
+        </figure>
+        <figure class="card">
+          <figcaption><h2>요구사항 커버리지</h2><p>실행된 TC가 있는 요구사항, 그 TC가 모두 통과한 요구사항의 비율</p></figcaption>
+          <div class="legend" id="legend-coverage"></div>
+          <div class="chart" id="chart-coverage"></div>
+        </figure>
+        <figure class="card">
+          <figcaption><h2>실행 시간</h2><p>테스트 전체 실행 시간(초)</p></figcaption>
+          <div class="chart" id="chart-duration"></div>
+        </figure>
+      </div>
+
+      <section class="card defects" aria-labelledby="defects-title">
+        <h2 id="defects-title">결함 탐지와 수정 (전체 실행 기준)</h2>
+        <dl id="defects"></dl>
+        <p class="note">테스트 실패를 결함의 대용치로 쓴 값입니다. 앱 결함이 아닌 테스트 문제로 생긴 실패도 포함되며 확정 결함 수가 아닙니다.</p>
+      </section>
+
+      <section class="card" aria-labelledby="runs-title">
+        <h2 id="runs-title">실행 기록</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th scope="col">시각 (KST)</th><th scope="col">커밋</th><th scope="col">결과</th><th scope="col" class="num">통과율</th><th scope="col" class="num">flaky</th><th scope="col" class="num">커버리지</th><th scope="col" class="num">실행 시간</th><th scope="col">실패 TC</th></tr>
+            </thead>
+            <tbody id="runs"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <footer class="foot">
+      <p>데이터: <a id="source" href="#">metrics-data 브랜치의 history.jsonl</a> · 지표 정의와 품질 게이트는 저장소 README의 “배포 지표와 품질 게이트”를 보세요.</p>
+    </footer>
+  </main>
+  <div class="tooltip" id="tooltip" role="status" hidden></div>
+  <script src="view-model.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>
