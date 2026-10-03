@@ -178,6 +178,13 @@ npm run metrics:summary   # 추세와 결함 탐지 수/평균 수정 시간
 npm run gate              # 게이트 판정 (--enforce, --strict 옵션)
 ```
 
+### 지표 대시보드 (GitHub Pages)
+`metrics-data` 브랜치의 `history.jsonl` 을 읽어 통과율·flaky 비율·요구사항 커버리지·실행 시간 추세와 결함 탐지 현황, 실행 기록 표를 보여 주는 정적 페이지입니다(`dashboard/`, 외부 라이브러리 없음, 라이트·다크 모드, 차트 위에 마우스나 방향키로 값 확인). main 에서 `Playwright Tests` 가 끝날 때마다 `.github/workflows/dashboard.yml` 이 다시 만들어 배포합니다.
+
+- 주소: `https://<사용자>.github.io/ai-qa-pipeline/` (저장소 Settings > Pages > Source 를 **GitHub Actions** 로 한 번 바꿔야 켜집니다)
+- 공개 페이지이므로 이력에서 화면에 쓰는 필드만 내보냅니다(`scripts/build-dashboard.js` 의 `publicRun`). 실행 링크는 `https://github.com/` 주소만 허용합니다.
+- 로컬 미리보기: `npm run dashboard:build -- --history metrics/history.jsonl` 후 `_site/` 를 아무 정적 서버로 열기 (`file://` 로는 `data.json` 을 읽지 못합니다)
+
 ## 자동 오케스트레이션 (Gemini, CI에서 자동 실행)
 
 Claude Code 세션 없이 CI에서 돌아가는 자동 버전입니다. `main`에서 테스트가 실패하면 `.github/workflows/self-heal.yml`이 시작됩니다.

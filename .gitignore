@@ -13,3 +13,5 @@ metrics/
 junit.xml
 heal-input/
 ~$*
+
+_site/
